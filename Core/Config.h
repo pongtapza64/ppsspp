@@ -90,12 +90,12 @@ public:
 	bool bScreenshotsAsPNG;
 	bool bEnableLogging;
 	bool bDumpDecryptedEboot;
+	bool bFullscreenOnDoubleclick;
 #if defined(USING_WIN_UI)
 	bool bPauseOnLostFocus;
 	bool bTopMost;
 	std::string sFont;
 	bool bIgnoreWindowsKey;
-
 	// Used for switching the GPU backend in GameSettingsScreen.
 	// Without this, PPSSPP instantly crashes if we edit iGPUBackend directly...
 	int iTempGPUBackend;
@@ -116,8 +116,6 @@ public:
 	bool bCheckForNewVersion;
 	bool bForceLagSync;
 	bool bFuncReplacements;
-	bool bSetRoundingMode;
-	bool bForceFlushToZero;
 
 	// Definitely cannot be changed while game is running.
 	bool bSeparateCPUThread;
@@ -146,7 +144,10 @@ public:
 	int iBufFilter; // 1 = linear, 2 = nearest
 	bool bPartialStretch;
 	bool bStretchToDisplay;
-	bool bSmallDisplay;  // Useful on large tablets with touch controls to not overlap the image. Temporary setting - will be replaced by more comprehensive display size settings.
+	int iSmallDisplayZoom;  // Used to fit display into screen 0 = auto, anything higher is used to set's integer zoom of psp resolution and allows manual editing
+	float fSmallDisplayOffsetX; // Along with Y it goes from 0.0 to 1.0, XY (0.5, 0.5) = center of the screen
+	float fSmallDisplayOffsetY;
+	float fSmallDisplayCustomZoom; //This is actually used for zoom, both in and out.
 	bool bImmersiveMode;  // Mode on Android Kitkat 4.4 that hides the back button etc.
 	bool bVSync;
 	int iFrameSkip;
@@ -186,7 +187,6 @@ public:
 	int iCwCheatRefreshRate;
 	bool bDisableStencilTest;
 	bool bAlwaysDepthWrite;
-	bool bDepthRangeHack;
 	int iBloomHack; //0 = off, 1 = safe, 2 = balanced, 3 = aggressive
 	bool bTimerHack;
 	bool bAlphaMaskHack;
@@ -195,6 +195,7 @@ public:
 	bool bFragmentTestCache;
 	int iSplineBezierQuality; // 0 = low , 1 = Intermediate , 2 = High
 	std::string sPostShaderName;  // Off for off.
+	bool bGfxDebugOutput;
 
 	// Sound
 	bool bEnableSound;
@@ -232,6 +233,8 @@ public:
 	bool bGridView1;
 	bool bGridView2;
 	bool bGridView3;
+	//Combo key screen flag
+	int iComboMode;
 
 	// Disable diagonals
 	bool bDisableDpadDiagonals;
@@ -274,6 +277,18 @@ public:
 	float fAnalogStickX, fAnalogStickY;
 	float fAnalogStickScale;
 
+	//the Combo Button position
+	float fcombo0X, fcombo0Y;
+	float fcomboScale0;
+	float fcombo1X, fcombo1Y;
+	float fcomboScale1;
+	float fcombo2X, fcombo2Y;
+	float fcomboScale2;
+	float fcombo3X, fcombo3Y;
+	float fcomboScale3;
+	float fcombo4X, fcombo4Y;
+	float fcomboScale4;
+
 	// Controls Visibility
 	bool bShowTouchControls;
 
@@ -291,6 +306,20 @@ public:
 
 	bool bShowTouchAnalogStick;
 	bool bShowTouchDpad;
+
+	//Combo Button Visibility
+	bool bShowComboKey0;
+	bool bShowComboKey1;
+	bool bShowComboKey2;
+	bool bShowComboKey3;
+	bool bShowComboKey4;
+	
+	// Combo_key mapping. These are bitfields.
+	int iCombokey0;
+	int iCombokey1;
+	int iCombokey2;
+	int iCombokey3;
+	int iCombokey4;
 
 #if !defined(__SYMBIAN32__) && !defined(IOS) && !defined(MAEMO)
 	bool bShowTouchPause;

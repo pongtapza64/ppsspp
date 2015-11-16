@@ -36,8 +36,8 @@
 
 #if defined(_WIN32)
 #include "Windows/DSoundStream.h"
-#include "Windows/WndMainWindow.h"
-#include "Windows/D3D9Base.h"
+#include "Windows/MainWindow.h"
+#include "Windows/GPU/D3D9Context.h"
 #endif
 
 #include "base/display.h"
@@ -51,7 +51,6 @@
 #include "gfx_es2/draw_text.h"
 #include "gfx_es2/gpu_features.h"
 #include "gfx/gl_lost_manager.h"
-#include "gfx/texture.h"
 #include "i18n/i18n.h"
 #include "input/input_state.h"
 #include "math/fast/fast_math.h"
@@ -127,6 +126,7 @@ std::string config_filename;
 
 #ifdef IOS
 bool iosCanUseJit;
+bool targetIsJailbroken;
 #endif
 
 // Really need to clean this mess of globals up... but instead I add more :P
@@ -262,6 +262,29 @@ void NativeGetAppInfo(std::string *app_dir_name, std::string *app_nice_name, boo
 #endif
 }
 
+#ifdef _WIN32
+bool CheckFontIsUsable(const wchar_t *fontFace) {
+	wchar_t actualFontFace[1024] = { 0 };
+
+	HFONT f = CreateFont(0, 0, 0, 0, FW_LIGHT, 0, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, PROOF_QUALITY, VARIABLE_PITCH, fontFace);
+	if (f != nullptr) {
+		HDC hdc = CreateCompatibleDC(nullptr);
+		if (hdc != nullptr) {
+			SelectObject(hdc, f);
+			GetTextFace(hdc, 1024, actualFontFace);
+			DeleteDC(hdc);
+		}
+		DeleteObject(f);
+	}
+
+	// If we were able to get the font name, did it load?
+	if (actualFontFace[0] != 0) {
+		return wcsncmp(actualFontFace, fontFace, ARRAY_SIZE(actualFontFace)) == 0;
+	}
+	return false;
+}
+#endif
+
 void NativeInit(int argc, const char *argv[],
 								const char *savegame_directory, const char *external_directory, const char *installID, bool fs) {
 #ifdef ANDROID_NDK_PROFILER
@@ -340,9 +363,9 @@ void NativeInit(int argc, const char *argv[],
 	// On Android, create a PSP directory tree in the external_directory,
 	// to hopefully reduce confusion a bit.
 	ILOG("Creating %s", (g_Config.memStickDirectory + "PSP").c_str());
-	mkDir((g_Config.memStickDirectory + "PSP").c_str());
-	mkDir((g_Config.memStickDirectory + "PSP/SAVEDATA").c_str());
-	mkDir((g_Config.memStickDirectory + "PSP/GAME").c_str());
+	File::CreateDir((g_Config.memStickDirectory + "PSP").c_str());
+	File::CreateDir((g_Config.memStickDirectory + "PSP/SAVEDATA").c_str());
+	File::CreateDir((g_Config.memStickDirectory + "PSP/GAME").c_str());
 #endif
 
 	const char *fileToLog = 0;
@@ -446,7 +469,12 @@ void NativeInit(int argc, const char *argv[],
 	// TODO: Could allow a setting to specify a font file to load?
 	// TODO: Make this a constant if we can sanely load the font on other systems?
 	AddFontResourceEx(L"assets/Roboto-Condensed.ttf", FR_PRIVATE, NULL);
-	g_Config.sFont = des->T("Font", "Roboto");
+	// The font goes by two names, let's allow either one.
+	if (CheckFontIsUsable(L"Roboto Condensed")) {
+		g_Config.sFont = des->T("Font", "Roboto Condensed");
+	} else {
+		g_Config.sFont = des->T("Font", "Roboto");
+	}
 #endif
 
 	if (!boot_filename.empty() && stateToLoad != NULL)
@@ -711,6 +739,12 @@ void NativeRender() {
 		if (g_Config.iGPUBackend == GPU_BACKEND_DIRECT3D9) {
 #ifdef _WIN32
 			D3D9_Resize(0);
+#endif
+		} else if (g_Config.iGPUBackend == GPU_BACKEND_OPENGL) {
+#ifndef _WIN32
+			PSP_CoreParameter().pixelWidth = pixel_xres;
+			PSP_CoreParameter().pixelHeight = pixel_yres;
+			NativeMessageReceived("gpu resized", "");
 #endif
 		}
 	}

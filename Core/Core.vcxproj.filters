@@ -622,6 +622,12 @@
     <ClCompile Include="FileLoaders\DiskCachingFileLoader.cpp">
       <Filter>FileLoaders</Filter>
     </ClCompile>
+    <ClCompile Include="Compatibility.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="HW\SasReverb.cpp">
+      <Filter>HW</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ELF\ElfReader.h">
@@ -661,9 +667,6 @@
       <Filter>MIPS</Filter>
     </ClInclude>
     <ClInclude Include="MIPS\x86\Jit.h">
-      <Filter>MIPS\x86</Filter>
-    </ClInclude>
-    <ClInclude Include="MIPS\x86\Asm.h">
       <Filter>MIPS\x86</Filter>
     </ClInclude>
     <ClInclude Include="MIPS\x86\RegCache.h">
@@ -954,9 +957,6 @@
     <ClInclude Include="..\ext\snappy\snappy-internal.h">
       <Filter>Ext\Snappy</Filter>
     </ClInclude>
-    <ClInclude Include="MIPS\ARM\ArmAsm.h">
-      <Filter>MIPS\ARM</Filter>
-    </ClInclude>
     <ClInclude Include="MIPS\ARM\ArmJit.h">
       <Filter>MIPS\ARM</Filter>
     </ClInclude>
@@ -1131,9 +1131,6 @@
     <ClInclude Include="MemMapHelpers.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="MIPS\ARM64\Arm64Asm.h">
-      <Filter>MIPS\ARM64</Filter>
-    </ClInclude>
     <ClInclude Include="MIPS\ARM64\Arm64Jit.h">
       <Filter>MIPS\ARM64</Filter>
     </ClInclude>
@@ -1166,6 +1163,12 @@
     </ClInclude>
     <ClInclude Include="HLE\ThreadQueueList.h">
       <Filter>HLE</Filter>
+    </ClInclude>
+    <ClInclude Include="Compatibility.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="HW\SasReverb.h">
+      <Filter>HW</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

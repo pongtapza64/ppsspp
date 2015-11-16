@@ -7,7 +7,6 @@
 #include "input/input_state.h"
 #include "input/keycodes.h"
 #include "gfx_es2/draw_buffer.h"
-#include "gfx/texture.h"
 #include "gfx/texture_atlas.h"
 #include "util/text/utf8.h"
 #include "ui/ui.h"
@@ -151,6 +150,17 @@ void View::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
 	w = 10.0f;
 	h = 10.0f;
 }
+
+void View::Query(float x, float y, std::vector<View *> &list) {
+	if (bounds_.Contains(x, y)) {
+		list.push_back(this);
+	}
+}
+
+std::string View::Describe() const {
+	return StringFromFormat("%0.1f,%0.1f %0.1fx%0.1f", bounds_.x, bounds_.y, bounds_.w, bounds_.h);
+}
+
 
 Point View::GetFocusPosition(FocusDirection dir) {
 	// The +2/-2 is some extra fudge factor to cover for views sitting right next to each other.
@@ -573,28 +583,6 @@ void ImageView::Draw(UIContext &dc) {
 	dc.Draw()->DrawImage(atlasImage_, bounds_.x, bounds_.y, scale, 0xFFFFFFFF, ALIGN_TOPLEFT);
 }
 
-void TextureView::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
-	// TODO: involve sizemode
-	if (texture_) {
-		w = (float)texture_->Width();
-		h = (float)texture_->Height();
-	} else {
-		w = 16;
-		h = 16;
-	}
-}
-
-void TextureView::Draw(UIContext &dc) {
-	// TODO: involve sizemode
-	if (texture_) {
-		dc.Flush();
-		texture_->Bind(0);
-		dc.Draw()->Rect(bounds_.x, bounds_.y, bounds_.w, bounds_.h, color_);
-		dc.Flush();
-		dc.RebindTexture();
-	}
-}
-
 void Thin3DTextureView::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
 	// TODO: involve sizemode
 	if (texture_) {
@@ -640,7 +628,7 @@ void TextView::Draw(UIContext &dc) {
 	bool clip = false;
 	if (w > bounds_.w || h > bounds_.h)
 		clip = true;
-	if (bounds_.w < 0 || bounds_.h < 0) {
+	if (bounds_.w < 0 || bounds_.h < 0 || !clip_) {
 		// We have a layout but, but try not to screw up rendering.
 		// TODO: Fix properly.
 		clip = false;
@@ -958,11 +946,17 @@ bool Slider::Key(const KeyInput &input) {
 }
 
 void Slider::Touch(const TouchInput &input) {
+	// Calling it afterwards, so dragging_ hasn't been set false yet when checking it above.
 	Clickable::Touch(input);
-	if (dragging_ || bounds_.Contains(input.x, input.y)) {
+	if (dragging_) {
 		float relativeX = (input.x - (bounds_.x + paddingLeft_)) / (bounds_.w - paddingLeft_ - paddingRight_);
 		*value_ = floorf(relativeX * (maxValue_ - minValue_) + minValue_ + 0.5f);
 		Clamp();
+		EventParams params;
+		params.v = this;
+		params.a = (uint32_t)(*value_);
+		params.f = (float)(*value_);
+		OnChange.Trigger(params);
 	}
 }
 
@@ -1033,10 +1027,16 @@ bool SliderFloat::Key(const KeyInput &input) {
 }
 
 void SliderFloat::Touch(const TouchInput &input) {
-	if (dragging_ || bounds_.Contains(input.x, input.y)) {
+	Clickable::Touch(input);
+	if (dragging_) {
 		float relativeX = (input.x - (bounds_.x + paddingLeft_)) / (bounds_.w - paddingLeft_ - paddingRight_);
 		*value_ = (relativeX * (maxValue_ - minValue_) + minValue_);
 		Clamp();
+		EventParams params;
+		params.v = this;
+		params.a = (uint32_t)(*value_);
+		params.f = (float)(*value_);
+		OnChange.Trigger(params);
 	}
 }
 

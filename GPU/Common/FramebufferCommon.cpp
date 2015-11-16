@@ -16,6 +16,9 @@
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
 #include <algorithm>
+#include <sstream>
+
+#include "i18n/i18n.h"
 #include "Common/Common.h"
 #include "Core/Config.h"
 #include "Core/CoreParameter.h"
@@ -25,8 +28,9 @@
 #include "GPU/Common/FramebufferCommon.h"
 #include "GPU/GPUInterface.h"
 #include "GPU/GPUState.h"
+#include "UI/OnScreenDisplay.h"  // Gross dependency!
 
-void CenterRect(float *x, float *y, float *w, float *h, float origW, float origH, float frameW, float frameH, int rotation) {
+void CenterDisplayOutputRect(float *x, float *y, float *w, float *h, float origW, float origH, float frameW, float frameH, int rotation) {
 	float outW;
 	float outH;
 
@@ -36,15 +40,50 @@ void CenterRect(float *x, float *y, float *w, float *h, float origW, float origH
 		outW = frameW;
 		outH = frameH;
 	} else {
-		// Add special case for 1080p displays, cutting off the bottom and top 1-pixel rows from the original 480x272.
-		// This will be what 99.9% of users want.
-		if (origW == 480 && origH == 272 && frameW == 1920 && frameH == 1080 && !rotated) {
-			*x = 0;
-			*y = -4;
-			*w = 1920;
-			*h = 1088;
-			return;
+		bool fullScreenZoom = true;
+#ifndef MOBILE_DEVICE
+		// This would turn off small display in window mode. I think it's better to allow it.
+		// fullScreenZoom = g_Config.bFullScreen;
+#endif
+		if (fullScreenZoom) {
+			if (g_Config.iSmallDisplayZoom != 0) {
+				float offsetX = (g_Config.fSmallDisplayOffsetX - 0.5f) * 2.0f * frameW;
+				float offsetY = (g_Config.fSmallDisplayOffsetY - 0.5f) * 2.0f * frameH;
+				// Have to invert Y for GL
+#if defined(USING_WIN_UI)
+				if (g_Config.iGPUBackend == GPU_BACKEND_OPENGL) { offsetY = offsetY * -1.0f; }
+#else
+				offsetY = offsetY * -1.0f;
+#endif
+				float customZoom = g_Config.fSmallDisplayCustomZoom / 8.0f;
+				float smallDisplayW = origW * customZoom;
+				float smallDisplayH = origH * customZoom;
+				if (!rotated) {
+					*x = floorf(((frameW - smallDisplayW) / 2.0f) + offsetX);
+					*y = floorf(((frameH - smallDisplayH) / 2.0f) + offsetY);
+					*w = floorf(smallDisplayW);
+					*h = floorf(smallDisplayH);
+					return;
+				} else {
+					*x = floorf(((frameW - smallDisplayH) / 2.0f) + offsetX);
+					*y = floorf(((frameH - smallDisplayW) / 2.0f) + offsetY);
+					*w = floorf(smallDisplayH);
+					*h = floorf(smallDisplayW);
+					return;
+				}
+			} else {
+				float pixelCrop = frameH / 270.0f;
+				float resCommonWidescreen = pixelCrop - floor(pixelCrop);
+				if (!rotated && resCommonWidescreen == 0.0f) {
+					*x = 0;
+					*y = floorf(-pixelCrop);
+					*w = floorf(frameW);
+					*h = floorf(pixelCrop * 272.0f);
+					return;
+				}
+			}
 		}
+
 
 		float origRatio = !rotated ? origW / origH : origH / origW;
 		float frameRatio = frameW / frameH;
@@ -63,15 +102,10 @@ void CenterRect(float *x, float *y, float *w, float *h, float origW, float origH
 		}
 	}
 
-	if (g_Config.bSmallDisplay) {
-		outW /= 2.0f;
-		outH /= 2.0f;
-	}
-
-	*x = (frameW - outW) / 2.0f;
-	*y = (frameH - outH) / 2.0f;
-	*w = outW;
-	*h = outH;
+	*x = floorf((frameW - outW) / 2.0f);
+	*y = floorf((frameH - outH) / 2.0f);
+	*w = floorf(outW);
+	*h = floorf(outH);
 }
 
 
@@ -85,14 +119,15 @@ FramebufferManagerCommon::FramebufferManagerCommon() :
 	frameLastFramebufUsed_(0),
 	currentRenderVfb_(0),
 	framebufRangeEnd_(0),
-	hackForce04154000Download_(false) {
+	hackForce04154000Download_(false),
+	updateVRAM_(false) {
+	UpdateSize();
 }
 
 FramebufferManagerCommon::~FramebufferManagerCommon() {
 }
 
 void FramebufferManagerCommon::Init() {
-
 	const std::string gameId = g_paramSFO.GetValueString("DISC_ID");
 	// This applies a hack to Dangan Ronpa, its demo, and its sequel.
 	// The game draws solid colors to a small framebuffer, and then reads this directly in VRAM.
@@ -104,6 +139,13 @@ void FramebufferManagerCommon::Init() {
 	ClearBuffer();
 
 	BeginFrame();
+}
+
+void FramebufferManagerCommon::UpdateSize() {
+	renderWidth_ = (float)PSP_CoreParameter().renderWidth;
+	renderHeight_ = (float)PSP_CoreParameter().renderHeight;
+	pixelWidth_ = PSP_CoreParameter().pixelWidth;
+	pixelHeight_ = PSP_CoreParameter().pixelHeight;
 }
 
 void FramebufferManagerCommon::BeginFrame() {
@@ -318,6 +360,10 @@ VirtualFramebuffer *FramebufferManagerCommon::DoSetRenderFrameBuffer(const Frame
 				needsRecreate = needsRecreate || vfb->newHeight > vfb->bufferHeight || vfb->newHeight * 2 < vfb->bufferHeight;
 				if (needsRecreate) {
 					ResizeFramebufFBO(vfb, vfb->width, vfb->height, true);
+				} else {
+					// Even though we won't resize it, let's at least change the size params.
+					vfb->width = drawing_width;
+					vfb->height = drawing_height;
 				}
 			}
 		} else {
@@ -326,8 +372,8 @@ VirtualFramebuffer *FramebufferManagerCommon::DoSetRenderFrameBuffer(const Frame
 		}
 	}
 
-	float renderWidthFactor = (float)PSP_CoreParameter().renderWidth / 480.0f;
-	float renderHeightFactor = (float)PSP_CoreParameter().renderHeight / 272.0f;
+	float renderWidthFactor = renderWidth_ / 480.0f;
+	float renderHeightFactor = renderHeight_ / 272.0f;
 
 	if (hackForce04154000Download_ && params.fb_address == 0x00154000) {
 		renderWidthFactor = 1.0;
@@ -750,7 +796,7 @@ void FramebufferManagerCommon::NotifyBlockTransferAfter(u32 dstBasePtr, int dstS
 		(displayBuffer != 0 && dstBasePtr == displayBuffer)) &&
 		dstStride == 512 && height == 272 && !useBufferedRendering_) {
 		FlushBeforeCopy();
-		DrawFramebuffer(Memory::GetPointerUnchecked(dstBasePtr), displayFormat_, 512, false);
+		DrawFramebufferToOutput(Memory::GetPointerUnchecked(dstBasePtr), displayFormat_, 512, false);
 	}
 
 	if (MayIntersectFramebuffer(srcBasePtr) || MayIntersectFramebuffer(dstBasePtr)) {
@@ -782,8 +828,8 @@ void FramebufferManagerCommon::NotifyBlockTransferAfter(u32 dstBasePtr, int dstS
 }
 
 void FramebufferManagerCommon::SetRenderSize(VirtualFramebuffer *vfb) {
-	float renderWidthFactor = (float)PSP_CoreParameter().renderWidth / 480.0f;
-	float renderHeightFactor = (float)PSP_CoreParameter().renderHeight / 272.0f;
+	float renderWidthFactor = renderWidth_ / 480.0f;
+	float renderHeightFactor = renderHeight_ / 272.0f;
 	bool force1x = false;
 	switch (g_Config.iBloomHack) {
 	case 1:
@@ -820,4 +866,16 @@ void FramebufferManagerCommon::UpdateFramebufUsage(VirtualFramebuffer *vfb) {
 	checkFlag(FB_USAGE_DISPLAYED_FRAMEBUFFER, vfb->last_frame_displayed);
 	checkFlag(FB_USAGE_TEXTURE, vfb->last_frame_used);
 	checkFlag(FB_USAGE_RENDERTARGET, vfb->last_frame_render);
+}
+
+void FramebufferManagerCommon::ShowScreenResolution() {
+	I18NCategory *gr = GetI18NCategory("Graphics");
+
+	std::ostringstream messageStream;
+	messageStream << gr->T("Internal Resolution") << ": ";
+	messageStream << PSP_CoreParameter().renderWidth << "x" << PSP_CoreParameter().renderHeight << " ";
+	messageStream << gr->T("Window Size") << ": ";
+	messageStream << PSP_CoreParameter().pixelWidth << "x" << PSP_CoreParameter().pixelHeight;
+
+	osm.Show(messageStream.str(), 2.0f, 0xFFFFFF, -1, true, "resize");
 }

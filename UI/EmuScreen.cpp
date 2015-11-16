@@ -46,6 +46,7 @@
 #include "GPU/GLES/Framebuffer.h"
 #include "Core/HLE/sceCtrl.h"
 #include "Core/HLE/sceDisplay.h"
+#include "Core/HLE/sceSas.h"
 #include "Core/Debugger/SymbolMap.h"
 #include "Core/SaveState.h"
 #include "Core/MIPS/MIPS.h"
@@ -63,6 +64,7 @@
 #include "UI/ControlMappingScreen.h"
 #include "UI/GameSettingsScreen.h"
 #include "UI/InstallZipScreen.h"
+#include "UI/ProfilerDraw.h"
 
 EmuScreen::EmuScreen(const std::string &filename)
 	: bootPending_(true), gamePath_(filename), invalid_(true), quit_(false), pauseTrigger_(false), saveStatePreviewShownTime_(0.0), saveStatePreview_(nullptr) {
@@ -156,6 +158,10 @@ void EmuScreen::bootComplete() {
 			osm.Show(sc->T("Chainfire3DWarning", "WARNING: Chainfire3D detected, may cause problems"), 10.0f, 0xFF30a0FF, -1, true);
 		} else if (strstr(renderer, "GLTools") != 0) {
 			osm.Show(sc->T("GLToolsWarning", "WARNING: GLTools detected, may cause problems"), 10.0f, 0xFF30a0FF, -1, true);
+		}
+
+		if (g_Config.bGfxDebugOutput) {
+			osm.Show("WARNING: GfxDebugOutput is enabled via ppsspp.ini. Things may be slow.", 10.0f, 0xFF30a0FF, -1, true);
 		}
 	}
 
@@ -254,8 +260,8 @@ void EmuScreen::sendMessage(const char *message, const char *value) {
 		if (saveStatePreview_) {
 			int curSlot = SaveState::GetCurrentSlot();
 			std::string fn;
-			if (SaveState::HasSaveInSlot(curSlot)) {
-				fn = SaveState::GenerateSaveSlotFilename(curSlot, "jpg");
+			if (SaveState::HasSaveInSlot(gamePath_, curSlot)) {
+				fn = SaveState::GenerateSaveSlotFilename(gamePath_, curSlot, "jpg");
 			}
 
 			saveStatePreview_->SetFilename(fn);
@@ -366,12 +372,10 @@ void EmuScreen::onVKeyDown(int virtualKeyCode) {
 		}
 		break;
 	case VIRTKEY_SAVE_STATE:
-		SaveState::SaveSlot(g_Config.iCurrentStateSlot, SaveState::Callback());
+		SaveState::SaveSlot(gamePath_, g_Config.iCurrentStateSlot, SaveState::Callback());
 		break;
 	case VIRTKEY_LOAD_STATE:
-		if (SaveState::HasSaveInSlot(g_Config.iCurrentStateSlot)) {
-			SaveState::LoadSlot(g_Config.iCurrentStateSlot, SaveState::Callback());
-		}
+		SaveState::LoadSlot(gamePath_, g_Config.iCurrentStateSlot, SaveState::Callback());
 		break;
 	case VIRTKEY_NEXT_SLOT:
 		SaveState::NextSlot();
@@ -791,6 +795,10 @@ static void DrawDebugStats(DrawBuffer *draw2d) {
 	draw2d->SetFontScale(.7f, .7f);
 	draw2d->DrawText(UBUNTU24, statbuf, 11, 31, 0xc0000000, FLAG_DYNAMIC_ASCII);
 	draw2d->DrawText(UBUNTU24, statbuf, 10, 30, 0xFFFFFFFF, FLAG_DYNAMIC_ASCII);
+
+	__SasGetDebugStats(statbuf, sizeof(statbuf));
+	draw2d->DrawText(UBUNTU24, statbuf, PSP_CoreParameter().pixelWidth / 2 + 11, 31, 0xc0000000, FLAG_DYNAMIC_ASCII);
+	draw2d->DrawText(UBUNTU24, statbuf, PSP_CoreParameter().pixelWidth / 2 + 10, 30, 0xFFFFFFFF, FLAG_DYNAMIC_ASCII);
 	draw2d->SetFontScale(1.0f, 1.0f);
 }
 
@@ -948,9 +956,9 @@ void EmuScreen::deviceLost() {
 
 void EmuScreen::autoLoad() {
 	//check if save state has save, if so, load
-	int lastSlot = SaveState::GetNewestSlot();
+	int lastSlot = SaveState::GetNewestSlot(gamePath_);
 	if (g_Config.bEnableAutoLoad && lastSlot != -1) {
-		SaveState::LoadSlot(lastSlot, SaveState::Callback(), 0);
+		SaveState::LoadSlot(gamePath_, lastSlot, SaveState::Callback(), 0);
 		g_Config.iCurrentStateSlot = lastSlot;
 	}
 }

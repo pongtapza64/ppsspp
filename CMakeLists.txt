@@ -40,6 +40,8 @@ endif()
 if(EXISTS "/opt/vc/include/bcm_host.h")
 	message(STATUS "RaspberryPI VC Found")
 	set(RPI ON)
+	set(USING_GLES2 ON)
+	set(USING_FBDEV ON)
 endif()
 
 if(BB)
@@ -90,6 +92,7 @@ option(BB "Set to ON if targeting a Beaglebone/Beaglebone Black device" ${BB})
 option(USING_EGL "Set to ON if target environment uses EGL" ${USING_EGL})
 option(USING_FBDEV "Set to ON if target environment uses fbdev (eg. Pandora)" ${USING_FBDEV})
 option(USING_GLES2 "Set to ON if target device uses OpenGL ES 2.0" ${USING_GLES2})
+option(RASPBIAN "Set to ON to workaround threading issues when building for ARMV7 on Raspbian" ${RASPBIAN})
 # :: Frontends
 option(USING_QT_UI "Set to ON if you wish to use the Qt frontend wrapper" ${USING_QT_UI})
 option(MOBILE_DEVICE "Set to ON when targetting a mobile device" ${MOBILE_DEVICE})
@@ -129,7 +132,7 @@ endif()
 include_directories(ext/native)
 
 if(RPI)
-	include_directories(/opt/vc/include /opt/vc/include/interface/vcos/pthreads)
+	include_directories(/opt/vc/include /opt/vc/include/interface/vcos/pthreads /opt/vc/include/interface/vmcs_host/linux)
 	link_directories(/opt/vc/lib)
 	set(OPENGL_LIBRARIES GLESv2 bcm_host)
 elseif(USING_GLES2 AND NOT IOS)
@@ -190,6 +193,9 @@ endif()
 if(MOBILE_DEVICE)
 	add_definitions(-DMOBILE_DEVICE)
 endif()
+if(ARMV7 AND RASPBIAN)
+	add_definitions(-U__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2)
+endif()
 
 if (NOT CMAKE_BUILD_TYPE)
 	message(STATUS "No build type selected, default to Release")
@@ -245,8 +251,8 @@ if(NOT MSVC)
 		# comment out the next line to enable default/"standard" architectures (which is a fat armv7/armv7s binary)
 		set(CMAKE_OSX_ARCHITECTURES "armv7")
 	elseif(APPLE)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -U__STRICT_ANSI__")
-		# Karen/angelXwind: --macosx-version-min=10.7 is needed in order to produce binaries that OS X 10.7 Lion can execute. However, it seems that PPSSPP won't support 10.6 or lower without getting rid of -stdlib=libc++ ...which probably won't end well. So I guess PPSSPP will strictly be a 10.7+ app.
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.7 -stdlib=libc++ -U__STRICT_ANSI__")
+		# Karen/angelXwind: -mmacosx-version-min=10.7 is needed in order to produce binaries that OS X 10.7 Lion can execute. However, it seems that PPSSPP won't support 10.6 or lower without getting rid of -stdlib=libc++ ...which probably won't end well. So I guess PPSSPP will strictly be a 10.7+ app.
 		# vit9696: OSX 10.6 builds are possible: http://forums.ppsspp.org/showthread.php?tid=1826&pid=18875#pid18875
 		set(CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++")
 	else()
@@ -298,8 +304,11 @@ set(CommonExtra)
 if(ARM)
 	set(CommonExtra ${CommonExtra}
 		Common/ArmCPUDetect.cpp
-		Common/ArmThunk.cpp
+		Common/ArmThunk.cpp)
+if(ARMV7)
+	set(CommonExtra ${CommonExtra}
 		Common/ColorConvNEON.cpp)
+endif()
 elseif(X86)
 	set(CommonExtra ${CommonExtra}
 		Common/ABI.cpp
@@ -423,14 +432,9 @@ add_library(rg_etc1 STATIC
 	ext/native/ext/rg_etc1/rg_etc1.h)
 include_directories(ext/native/ext/rg_etc1)
 
-add_library(stb_vorbis STATIC
-	ext/native/ext/stb_vorbis/stb_vorbis.c
-	ext/native/ext/stb_vorbis/stb_vorbis.h)
-include_directories(ext/native/ext/stb_vorbis)
-
 if(USE_FFMPEG)
 	if(USE_SYSTEM_FFMPEG)
-		include(FindFFMPEG)
+		find_package(FFMPEG)
 	else()
 		set(FFMPEG_FOUND OFF)
 	endif()
@@ -549,29 +553,29 @@ endif(USE_FFMPEG)
 if(USE_FFMPEG AND DEFINED FFMPEG_LIBRARIES)
 	message(STATUS "FFMPEG library locations:")
 	if(FFMPEG_FOUND)
-		message(STATUS "libavcodec location: ${FFMPEG_avcodec_LIBRARY}")
-		message(STATUS "libavformat location: ${FFMPEG_avformat_LIBRARY}")
-		message(STATUS "libavutil location: ${FFMPEG_avutil_LIBRARY}")
-		message(STATUS "libswresample location: ${FFMPEG_swresample_LIBRARY}")
-		message(STATUS "libswscale location: ${FFMPEG_swscale_LIBRARY}")
+		message(STATUS "  libavcodec location: ${FFMPEG_avcodec_LIBRARY}")
+		message(STATUS "  libavformat location: ${FFMPEG_avformat_LIBRARY}")
+		message(STATUS "  libavutil location: ${FFMPEG_avutil_LIBRARY}")
+		message(STATUS "  libswresample location: ${FFMPEG_swresample_LIBRARY}")
+		message(STATUS "  libswscale location: ${FFMPEG_swscale_LIBRARY}")
 	elseif(DEFINED PLATFORM_ARCH)
 		set(TEMP ${CMAKE_SOURCE_DIR}/ffmpeg/${PLATFORM_ARCH}/lib)
-		message(STATUS "libavcodec location: ${TEMP}/libavcodec.a")
-		message(STATUS "libavformat location: ${TEMP}/libavformat.a")
-		message(STATUS "libavutil location: ${TEMP}/libavutil.a")
-		message(STATUS "libswresample location: ${TEMP}/libswresample.a")
-		message(STATUS "libswscale location: ${TEMP}/libswscale.a")
+		message(STATUS "  libavcodec location: ${TEMP}/libavcodec.a")
+		message(STATUS "  libavformat location: ${TEMP}/libavformat.a")
+		message(STATUS "  libavutil location: ${TEMP}/libavutil.a")
+		message(STATUS "  libswresample location: ${TEMP}/libswresample.a")
+		message(STATUS "  libswscale location: ${TEMP}/libswscale.a")
 	else()
 		get_target_property(TEMP libavcodec IMPORTED_LOCATION)
-		message(STATUS "libavcodec location: ${TEMP}")
+		message(STATUS "  libavcodec location: ${TEMP}")
 		get_target_property(TEMP libavformat IMPORTED_LOCATION)
-		message(STATUS "libavformat location: ${TEMP}")
+		message(STATUS "  libavformat location: ${TEMP}")
 		get_target_property(TEMP libavutil IMPORTED_LOCATION)
-		message(STATUS "libavutil location: ${TEMP}")
+		message(STATUS "  libavutil location: ${TEMP}")
 		get_target_property(TEMP libswresample IMPORTED_LOCATION)
-		message(STATUS "libswresample location: ${TEMP}")
+		message(STATUS "  libswresample location: ${TEMP}")
 		get_target_property(TEMP libswscale IMPORTED_LOCATION)
-		message(STATUS "libswscale location: ${TEMP}")
+		message(STATUS "  libswscale location: ${TEMP}")
 	endif()
 else()
 	message(STATUS "ERROR: No FFMPEG library locations")
@@ -751,6 +755,10 @@ set(nativeExtraLibs)
 if(ARMV7)
 	if(BB)
 		set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=armv7-a -mfpu=neon -mcpu=cortex-a8")
+	elseif(RPI)
+		set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-a7 -mfpu=neon -mfloat-abi=hard")
+		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=cortex-a7 -mfpu=neon -mfloat-abi=hard")
+		set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -mcpu=cortex-a7 -mfpu=neon -mfloat-abi=hard")
 	else()
 		set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv7-a -mfpu=neon -mcpu=cortex-a9")
 		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv7-a -mfpu=neon -mcpu=cortex-a9")
@@ -758,6 +766,10 @@ if(ARMV7)
 	endif()
 	set(nativeExtra ${nativeExtra}
 		ext/native/math/fast/fast_matrix_neon.S)
+elseif(RPI)
+	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpu=vfp -march=armv6j -mfloat-abi=hard")
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=vfp -march=armv6j -mfloat-abi=hard")
+	set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -mfpu=vfp -march=armv6j -mfloat-abi=hard")
 endif()
 if(X86 AND NOT MIPS)
 	set(nativeExtra ${nativeExtra}
@@ -792,6 +804,10 @@ elseif(IOS)
 	set(nativeExtraLibs ${nativeExtraLibs} "-framework Foundation -framework AudioToolbox -framework CoreGraphics -framework QuartzCore -framework OpenGLES -framework UIKit -framework GLKit -framework OpenAL")
 	if(EXISTS "${CMAKE_IOS_SDK_ROOT}/System/Library/Frameworks/GameController.framework")
 		set(nativeExtraLibs ${nativeExtraLibs} "-weak_framework GameController")
+	endif()
+	
+	if(NOT ICONV_LIBRARY)
+		set(nativeExtraLibs ${nativeExtraLibs} iconv)
 	endif()
 
 	set_source_files_properties(ios/AppDelegate.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
@@ -845,6 +861,8 @@ set(NativeAppSource
 	UI/NativeApp.cpp
 	UI/BackgroundAudio.cpp
 	UI/DevScreens.cpp
+	UI/DisplayLayoutEditor.cpp
+	UI/DisplayLayoutScreen.cpp
 	UI/EmuScreen.cpp
 	UI/GameInfoCache.cpp
 	UI/MainScreen.cpp
@@ -864,7 +882,9 @@ set(NativeAppSource
 	UI/Store.cpp
 	UI/CwCheatScreen.cpp
 	UI/InstallZipScreen.cpp
-	UI/ui_atlas.cpp)
+	UI/ProfilerDraw.cpp
+	UI/ui_atlas.cpp
+	UI/ComboKeyMappingScreen.cpp)
 if(ANDROID)
 	if (ARM)
 		set(NativeAppSource ${NativeAppSource} android/jni/ArmEmitterTest.cpp)
@@ -876,28 +896,17 @@ add_library(native STATIC
 	${nativeExtra}
 	ext/native/base/backtrace.cpp
 	ext/native/base/backtrace.h
-	ext/native/audio/mixer.cpp
-	ext/native/audio/mixer.h
-	ext/native/audio/wav_read.cpp
-	ext/native/audio/wav_read.h
 	ext/native/base/basictypes.h
 	ext/native/base/buffer.cpp
 	ext/native/base/buffer.h
-	ext/native/base/color.h
 	ext/native/base/colorutil.cpp
 	ext/native/base/colorutil.h
 	ext/native/base/display.cpp
 	ext/native/base/display.h
-	ext/native/base/error_context.cpp
-	ext/native/base/error_context.h
-	ext/native/base/fastlist.h
-	ext/native/base/fastlist_test.cpp
 	ext/native/base/functional.h
 	ext/native/base/linked_ptr.h
 	ext/native/base/logging.h
 	ext/native/base/mutex.h
-	ext/native/base/scoped_ptr.h
-	ext/native/base/stats.h
 	ext/native/base/stringutil.cpp
 	ext/native/base/stringutil.h
 	ext/native/base/timeutil.cpp
@@ -910,10 +919,6 @@ add_library(native STATIC
 	ext/native/ext/vjson/block_allocator.h
 	ext/native/file/chunk_file.cpp
 	ext/native/file/chunk_file.h
-	ext/native/file/dialog.cpp
-	ext/native/file/dialog.h
-	ext/native/file/easy_file.cpp
-	ext/native/file/easy_file.h
 	ext/native/file/fd_util.cpp
 	ext/native/file/fd_util.h
 	ext/native/file/file_util.cpp
@@ -930,13 +935,8 @@ add_library(native STATIC
 	ext/native/gfx/gl_debug_log.h
 	ext/native/gfx/gl_lost_manager.cpp
 	ext/native/gfx/gl_lost_manager.h
-	ext/native/gfx/texture.cpp
-	ext/native/gfx/texture.h
 	ext/native/gfx/texture_atlas.cpp
 	ext/native/gfx/texture_atlas.h
-#	ext/native/gfx/texture_dx11.cpp
-	ext/native/gfx/texture_gen.cpp
-	ext/native/gfx/texture_gen.h
 	ext/native/gfx_es2/draw_buffer.cpp
 	ext/native/gfx_es2/draw_buffer.h
 	ext/native/gfx_es2/draw_text.cpp
@@ -945,8 +945,6 @@ add_library(native STATIC
 	ext/native/gfx_es2/gpu_features.h
 	ext/native/gfx_es2/glsl_program.cpp
 	ext/native/gfx_es2/glsl_program.h
-	ext/native/gfx_es2/vertex_format.cpp
-	ext/native/gfx_es2/vertex_format.h
 	ext/native/gfx_es2/gl3stub.c
 	ext/native/gfx_es2/gl3stub.h
 	ext/native/i18n/i18n.cpp
@@ -968,8 +966,6 @@ add_library(native STATIC
 	ext/native/math/curves.h
 	ext/native/math/expression_parser.cpp
 	ext/native/math/expression_parser.h
-	ext/native/math/lin/aabb.cpp
-	ext/native/math/lin/aabb.h
 	ext/native/math/lin/matrix4x4.cpp
 	ext/native/math/lin/matrix4x4.h
 	ext/native/math/lin/plane.cpp
@@ -981,6 +977,8 @@ add_library(native STATIC
 	ext/native/math/lin/vec3.h
 	ext/native/math/math_util.cpp
 	ext/native/math/math_util.h
+	ext/native/net/http_server.cpp
+	ext/native/net/http_server.h
 	ext/native/net/http_client.cpp
 	ext/native/net/http_client.h
 	ext/native/net/resolve.cpp
@@ -1012,15 +1010,8 @@ add_library(native STATIC
 	ext/native/ui/viewgroup.h
 	ext/native/ui/virtual_input.cpp
 	ext/native/ui/virtual_input.h
-	ext/native/util/bits/bits.cpp
-	ext/native/util/bits/bits.h
-	ext/native/util/bits/hamming.h
-	ext/native/util/bits/varint.cpp
-	ext/native/util/bits/varint.h
 	ext/native/util/hash/hash.cpp
 	ext/native/util/hash/hash.h
-	ext/native/util/random/perlin.cpp
-	ext/native/util/random/perlin.h
 	ext/native/util/random/rng.h
 	ext/native/util/text/utf8.h
 	ext/native/util/text/utf8.cpp
@@ -1037,7 +1028,7 @@ if (LINUX AND NOT ANDROID)
 	SET(RT_LIB rt)
 endif()
 
-target_link_libraries(native ${LIBZIP_LIBRARY} ${ZLIB_LIBRARY} ${PNG_LIBRARY} rg_etc1 vjson stb_vorbis snappy udis86 ${RT_LIB} ${GLEW_LIBRARIES})
+target_link_libraries(native ${LIBZIP_LIBRARY} ${ZLIB_LIBRARY} ${PNG_LIBRARY} rg_etc1 vjson snappy udis86 ${RT_LIB} ${GLEW_LIBRARIES})
 
 if(ANDROID)
 	target_link_libraries(native log EGL)
@@ -1085,7 +1076,6 @@ set(CoreExtraLibs)
 if(ARM)
 	set(CoreExtra ${CoreExtra}
 		Core/MIPS/ARM/ArmAsm.cpp
-		Core/MIPS/ARM/ArmAsm.h
 		Core/MIPS/ARM/ArmCompALU.cpp
 		Core/MIPS/ARM/ArmCompBranch.cpp
 		Core/MIPS/ARM/ArmCompFPU.cpp
@@ -1105,7 +1095,6 @@ if(ARM)
 elseif(ARM64)
   set(CoreExtra ${CoreExtra}
 		Core/MIPS/ARM64/Arm64Asm.cpp
-		Core/MIPS/ARM64/Arm64Asm.h
 		Core/MIPS/ARM64/Arm64CompALU.cpp
 		Core/MIPS/ARM64/Arm64CompBranch.cpp
 		Core/MIPS/ARM64/Arm64CompFPU.cpp
@@ -1123,7 +1112,6 @@ elseif(ARM64)
 elseif(X86)
 	set(CoreExtra ${CoreExtra}
 		Core/MIPS/x86/Asm.cpp
-		Core/MIPS/x86/Asm.h
 		Core/MIPS/x86/CompALU.cpp
 		Core/MIPS/x86/CompBranch.cpp
 		Core/MIPS/x86/CompFPU.cpp
@@ -1166,6 +1154,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/Config.h
 	Core/Core.cpp
 	Core/Core.h
+	Core/Compatibility.cpp
+	Core/Compatibility.h
 	Core/CoreParameter.h
 	Core/CoreTiming.cpp
 	Core/CoreTiming.h
@@ -1372,6 +1362,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/HW/MemoryStick.h
 	Core/HW/SasAudio.cpp
 	Core/HW/SasAudio.h
+	Core/HW/SasReverb.cpp
+	Core/HW/SasReverb.h
 	Core/HW/StereoResampler.cpp
 	Core/HW/StereoResampler.h
 	Core/Host.cpp
@@ -1472,9 +1464,12 @@ add_library(GPU OBJECT
 	GPU/Common/FramebufferCommon.h
 	GPU/Common/GPUDebugInterface.cpp
 	GPU/Common/GPUDebugInterface.h
+	GPU/Common/GPUStateUtils.cpp
 	GPU/Common/GPUStateUtils.h
 	GPU/Common/DrawEngineCommon.cpp
 	GPU/Common/DrawEngineCommon.h
+	GPU/Common/ShaderId.cpp
+	GPU/Common/ShaderId.h
 	GPU/Common/SplineCommon.cpp
 	GPU/Common/SplineCommon.h
 	GPU/Common/SoftwareTransformCommon.cpp
@@ -1630,6 +1625,7 @@ set(NativeAssets
 	android/assets/ui_atlas.zim
 	assets/shaders
 	assets/ppge_atlas.zim
+	assets/compat.ini
 	assets/langregion.ini
 	assets/unknown.png)
 set(LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT} ${nativeExtraLibs})
@@ -1706,7 +1702,11 @@ if(IOS)
 	add_dependencies(PPSSPP ${CoreLibName} GPU Common native)
 
 	file(GLOB IOSAssets ios/assets/*.png)
+	list(REMOVE_ITEM IOSAssets ${CMAKE_CURRENT_SOURCE_DIR}/ios/assets/Default-568h@2x.png)
+	list(REMOVE_ITEM IOSAssets ${CMAKE_CURRENT_SOURCE_DIR}/ios/assets/Default-568h@3x.png)
 	file(INSTALL ${IOSAssets} DESTINATION assets)
+	file(GLOB IOSAssets ios/assets/Default-568h@*.png)
+	file(INSTALL ${IOSAssets} DESTINATION .)
 	if (IOS_DEBUG)
 		file(INSTALL pspautotests DESTINATION assets)
 	endif()
@@ -1716,7 +1716,7 @@ if(IOS)
 	)
 	set(APP_DIR_NAME \${TARGET_BUILD_DIR}/\${FULL_PRODUCT_NAME})
 	add_custom_command(TARGET PPSSPP POST_BUILD
-		COMMAND tar -c -C . --exclude .DS_Store --exclude .git -H gnu assets | tar -x -C '${APP_DIR_NAME}'
+		COMMAND tar -c -C . --exclude .DS_Store --exclude .git -H gnu assets *.png | tar -x -C '${APP_DIR_NAME}'
 	)
 	# Force Xcode to relink the binary.
 	add_custom_command(TARGET Core PRE_BUILD
@@ -1728,6 +1728,7 @@ if(IOS)
 		XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "iPhone/iPad"
         XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC YES
         XCODE_ATTRIBUTE_ENABLE_BITCODE NO
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
 	)
 endif()
 

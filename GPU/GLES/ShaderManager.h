@@ -18,34 +18,15 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "../../Globals.h"
+#include "Globals.h"
 #include <map>
-#include "VertexShaderGenerator.h"
-#include "FragmentShaderGenerator.h"
+
+#include "GPU/Common/ShaderCommon.h"
+#include "GPU/Common/ShaderId.h"
+#include "GPU/GLES/VertexShaderGenerator.h"
+#include "GPU/GLES/FragmentShaderGenerator.h"
 
 class Shader;
-
-struct ShaderID {
-	ShaderID() { d[0] = 0xFFFFFFFF; }
-	void clear() { d[0] = 0xFFFFFFFF; }
-	u32 d[2];
-	bool operator < (const ShaderID &other) const {
-		for (size_t i = 0; i < sizeof(d) / sizeof(u32); i++) {
-			if (d[i] < other.d[i])
-				return true;
-			if (d[i] > other.d[i])
-				return false;
-		}
-		return false;
-	}
-	bool operator == (const ShaderID &other) const {
-		for (size_t i = 0; i < sizeof(d) / sizeof(u32); i++) {
-			if (d[i] != other.d[i])
-				return false;
-		}
-		return true;
-	}
-};
 
 // Pre-fetched attrs and uniforms
 enum {
@@ -181,20 +162,22 @@ enum {
 
 class Shader {
 public:
-	Shader(const char *code, uint32_t shaderType, bool useHWTransform, const ShaderID &shaderID);
+	Shader(const char *code, uint32_t glShaderType, bool useHWTransform, const ShaderID &shaderID);
 	~Shader();
 	uint32_t shader;
-	const std::string &source() const { return source_; }
 
 	bool Failed() const { return failed_; }
 	bool UseHWTransform() const { return useHWTransform_; }
 	const ShaderID &ID() const { return id_; }
+
+	std::string GetShaderString(DebugShaderStringType type) const;
 
 private:
 	std::string source_;
 	ShaderID id_;
 	bool failed_;
 	bool useHWTransform_;
+	bool isFragment_;
 };
 
 class ShaderManager {
@@ -218,6 +201,9 @@ public:
 	int NumVertexShaders() const { return (int)vsCache_.size(); }
 	int NumFragmentShaders() const { return (int)fsCache_.size(); }
 	int NumPrograms() const { return (int)linkedShaderCache_.size(); }
+
+	std::vector<std::string> DebugGetShaderIDs(DebugShaderType type);
+	std::string DebugGetShaderString(std::string id, DebugShaderType type, DebugShaderStringType stringType);
 
 private:
 	void Clear();

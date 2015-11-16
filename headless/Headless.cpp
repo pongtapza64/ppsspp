@@ -25,7 +25,7 @@
 #include "Compare.h"
 #include "StubHost.h"
 #ifdef _WIN32
-#include "Windows/OpenGLBase.h"
+#include "Windows/GPU/WindowsGLContext.h"
 #include "WindowsHeadlessHost.h"
 #include "WindowsHeadlessHostDx9.h"
 #endif
@@ -357,7 +357,6 @@ int main(int argc, const char* argv[])
 	g_Config.bSoftwareSkinning = true;
 	g_Config.bVertexDecoderJit = true;
 	g_Config.bBlockTransferGPU = true;
-	g_Config.bSetRoundingMode = true;
 
 #ifdef _WIN32
 	InitSysDirectories();

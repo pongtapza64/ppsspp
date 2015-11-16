@@ -11,18 +11,22 @@
 #include <vector>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 #include "base/logging.h"
 #include "base/functional.h"
 #include "base/mutex.h"
 #include "base/basictypes.h"
-#include "base/scoped_ptr.h"
 #include "gfx/texture_atlas.h"
 #include "math/lin/matrix4x4.h"
 #include "math/math_util.h"
 #include "math/geom2d.h"
 
 #undef small
+
+#ifdef __SYMBIAN32__
+#define unique_ptr auto_ptr
+#endif
 
 struct KeyInput;
 struct TouchInput;
@@ -310,6 +314,10 @@ public:
 	virtual void Axis(const AxisInput &input) {}
 	virtual void Update(const InputState &input_state) {}
 
+	// If this view covers these coordinates, it should add itself and its children to the list.
+	virtual void Query(float x, float y, std::vector<View *> &list);
+	virtual std::string Describe() const;
+
 	virtual void FocusChanged(int focusFlags) {}
 
 	void Move(Bounds bounds) {
@@ -365,7 +373,7 @@ public:
 
 protected:
 	// Inputs to layout
-	scoped_ptr<LayoutParams> layoutParams_;
+	std::unique_ptr<LayoutParams> layoutParams_;
 
 	std::string tag_;
 	Visibility visibility_;
@@ -377,7 +385,7 @@ protected:
 	// Outputs of layout. X/Y are absolute screen coordinates, hierarchy is "gone" here.
 	Bounds bounds_;
 
-	scoped_ptr<Matrix4x4> transform_;
+	std::unique_ptr<Matrix4x4> transform_;
 
 private:
 	bool *enabledPtr_;
@@ -461,6 +469,8 @@ public:
 	// OK to call this from the outside after having modified *value_
 	void Clamp();
 
+	Event OnChange;
+
 private:
 	int *value_;
 	bool showPercent_;
@@ -482,6 +492,9 @@ public:
 
 	// OK to call this from the outside after having modified *value_
 	void Clamp();
+
+	Event OnChange;
+
 private:
 	float *value_;
 	float minValue_;
@@ -669,11 +682,11 @@ private:
 
 class TextView : public InertView {
 public:
-	TextView(const std::string &text, LayoutParams *layoutParams = 0) 
-		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF), small_(false), shadow_(false), focusable_(false) {}
+	TextView(const std::string &text, LayoutParams *layoutParams = 0)
+		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF), small_(false), shadow_(false), focusable_(false), clip_(true) {}
 
 	TextView(const std::string &text, int textAlign, bool small, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), small_(small), shadow_(false), focusable_(false) {}
+		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), small_(small), shadow_(false), focusable_(false), clip_(true) {}
 
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
 	void Draw(UIContext &dc) override;
@@ -684,6 +697,7 @@ public:
 	void SetTextColor(uint32_t color) { textColor_ = color; }
 	void SetShadow(bool shadow) { shadow_ = shadow; }
 	void SetFocusable(bool focusable) { focusable_ = focusable; }
+	void SetClip(bool clip) { clip_ = clip; }
 
 	bool CanBeFocused() const override { return focusable_; }
 
@@ -694,6 +708,7 @@ private:
 	bool small_;
 	bool shadow_;
 	bool focusable_;
+	bool clip_;
 };
 
 class TextEdit : public View {
@@ -738,25 +753,6 @@ public:
 
 private:
 	int atlasImage_;
-	ImageSizeMode sizeMode_;
-};
-
-// TextureView takes a texture that is assumed to be alive during the lifetime
-// of the view.
-class TextureView : public InertView {
-public:
-	TextureView(Texture *texture, ImageSizeMode sizeMode, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), texture_(texture), sizeMode_(sizeMode) {}
-
-	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
-	void Draw(UIContext &dc) override;
-
-	void SetTexture(Texture *texture) { texture_ = texture; }
-	void SetColor(uint32_t color) { color_ = color; }
-
-private:
-	Texture *texture_;
-	uint32_t color_;
 	ImageSizeMode sizeMode_;
 };
 

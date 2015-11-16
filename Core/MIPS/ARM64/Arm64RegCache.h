@@ -24,7 +24,7 @@
 namespace Arm64JitConstants {
 
 const Arm64Gen::ARM64Reg DOWNCOUNTREG = Arm64Gen::W23;
-const Arm64Gen::ARM64Reg OTHERTEMPREG = Arm64Gen::X24;
+const Arm64Gen::ARM64Reg OTHERTEMPREG = Arm64Gen::W24;
 const Arm64Gen::ARM64Reg FLAGTEMPREG = Arm64Gen::X25;
 const Arm64Gen::ARM64Reg JITBASEREG = Arm64Gen::X26;
 const Arm64Gen::ARM64Reg CTXREG = Arm64Gen::X27;
@@ -134,9 +134,9 @@ public:
 
 	int GetMipsRegOffset(MIPSGPReg r);
 
-	// Call these when leaving/entering the JIT
-	void EmitLoadStaticAllocs();
-	void EmitSaveStaticAllocs();
+	// These are called once on startup to generate functions, that you should then call.
+	void EmitLoadStaticRegisters();
+	void EmitSaveStaticRegisters();
 
 private:
 	struct StaticAllocation {

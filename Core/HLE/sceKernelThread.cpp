@@ -1237,7 +1237,7 @@ u32 sceKernelReferThreadStatus(u32 threadID, u32 statusPtr)
 			return SCE_KERNEL_ERROR_ILLEGAL_SIZE;
 		}
 
-		DEBUG_LOG(SCEKERNEL, "sceKernelReferThreadStatus(%i, %08x)", threadID, statusPtr);
+		VERBOSE_LOG(SCEKERNEL, "sceKernelReferThreadStatus(%i, %08x)", threadID, statusPtr);
 
 		t->nt.nativeSize = THREADINFO_SIZE_AFTER_260;
 		if (wantedSize != 0)
@@ -1248,7 +1248,7 @@ u32 sceKernelReferThreadStatus(u32 threadID, u32 statusPtr)
 	}
 	else
 	{
-		DEBUG_LOG(SCEKERNEL, "sceKernelReferThreadStatus(%i, %08x)", threadID, statusPtr);
+		VERBOSE_LOG(SCEKERNEL, "sceKernelReferThreadStatus(%i, %08x)", threadID, statusPtr);
 
 		t->nt.nativeSize = THREADINFO_SIZE;
 		u32 sz = std::min(THREADINFO_SIZE, wantedSize);
@@ -1497,9 +1497,6 @@ void __KernelWaitCurThread(WaitType type, SceUID waitID, u32 waitValue, u32 time
 	thread->nt.numReleases++;
 	thread->waitInfo.waitValue = waitValue;
 	thread->waitInfo.timeoutPtr = timeoutPtr;
-
-	// TODO: Remove this once all callers are cleaned up.
-	RETURN(0); //pretend all went OK
 
 	// TODO: time waster
 	if (!reason)
@@ -2223,37 +2220,30 @@ int sceKernelTerminateDeleteThread(int threadID)
 	}
 }
 
-int sceKernelTerminateThread(SceUID threadID)
-{
-	if (threadID == 0 || threadID == currentThread)
-	{
-		ERROR_LOG(SCEKERNEL, "sceKernelTerminateThread(%i): cannot terminate current thread", threadID);
-		return SCE_KERNEL_ERROR_ILLEGAL_THID;
+int sceKernelTerminateThread(SceUID threadID) {
+	if (__IsInInterrupt() && sceKernelGetCompiledSdkVersion() >= 0x03080000) {
+		return hleLogError(SCEKERNEL, SCE_KERNEL_ERROR_ILLEGAL_CONTEXT, "in interrupt");
+	}
+	if (threadID == 0 || threadID == currentThread) {
+		return hleLogError(SCEKERNEL, SCE_KERNEL_ERROR_ILLEGAL_THID, "cannot terminate current thread");
 	}
 
 	u32 error;
 	Thread *t = kernelObjects.Get<Thread>(threadID, error);
-	if (t)
-	{
-		if (t->isStopped())
-		{
-			ERROR_LOG(SCEKERNEL, "sceKernelTerminateThread(%i): already stopped", threadID);
-			return SCE_KERNEL_ERROR_DORMANT;
+	if (t) {
+		if (t->isStopped()) {
+			return hleLogError(SCEKERNEL, SCE_KERNEL_ERROR_DORMANT, "already stopped");
 		}
 
-		INFO_LOG(SCEKERNEL, "sceKernelTerminateThread(%i)", threadID);
 		// TODO: Should this reschedule?  Seems like not.
 		__KernelStopThread(threadID, SCE_KERNEL_ERROR_THREAD_TERMINATED, "thread terminated");
 
 		// On terminate, we reset the thread priority.  On exit, we don't always (see __KernelResetThread.)
 		t->nt.currentPriority = t->nt.initialPriority;
 
-		return 0;
-	}
-	else
-	{
-		ERROR_LOG(SCEKERNEL, "sceKernelTerminateThread(%i): thread doesn't exist", threadID);
-		return error;
+		return hleLogSuccessInfoI(SCEKERNEL, 0);
+	} else {
+		return hleLogError(SCEKERNEL, error, "thread doesn't exist");
 	}
 }
 

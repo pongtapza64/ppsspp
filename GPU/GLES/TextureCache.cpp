@@ -964,7 +964,6 @@ void TextureCache::SetTextureFramebuffer(TexCacheEntry *entry, VirtualFramebuffe
 		// We need to force it, since we may have set it on a texture before attaching.
 		gstate_c.curTextureWidth = framebuffer->bufferWidth;
 		gstate_c.curTextureHeight = framebuffer->bufferHeight;
-		gstate_c.flipTexture = true;
 		gstate_c.curTextureXOffset = fbTexInfo_[entry->addr].xOffset;
 		gstate_c.curTextureYOffset = fbTexInfo_[entry->addr].yOffset;
 		gstate_c.needShaderTexClamp = gstate_c.curTextureWidth != (u32)gstate.getTextureWidth(0) || gstate_c.curTextureHeight != (u32)gstate.getTextureHeight(0);
@@ -1005,8 +1004,10 @@ void TextureCache::ApplyTexture() {
 			}
 		}
 
-		glBindTexture(GL_TEXTURE_2D, nextTexture_->textureName);
-		lastBoundTexture = nextTexture_->textureName;
+		if (nextTexture_->textureName != lastBoundTexture) {
+			glBindTexture(GL_TEXTURE_2D, nextTexture_->textureName);
+			lastBoundTexture = nextTexture_->textureName;
+		}
 		UpdateSamplingParams(*nextTexture_, false);
 	}
 
@@ -1067,8 +1068,8 @@ void TextureCache::ApplyTextureFramebuffer(TexCacheEntry *entry, VirtualFramebuf
 
 			const float left = u1 * invHalfWidth - 1.0f;
 			const float right = u2 * invHalfWidth - 1.0f;
-			const float top = -(v1 * invHalfHeight - 1.0f);
-			const float bottom = -(v2 * invHalfHeight - 1.0f);
+			const float top = v1 * invHalfHeight - 1.0f;
+			const float bottom = v2 * invHalfHeight - 1.0f;
 			// Points are: BL, BR, TR, TL.
 			pos[0] = Pos(left, bottom, -1.0f);
 			pos[1] = Pos(right, bottom, -1.0f);
@@ -1078,8 +1079,8 @@ void TextureCache::ApplyTextureFramebuffer(TexCacheEntry *entry, VirtualFramebuf
 			// And also the UVs, same order.
 			const float uvleft = u1 * invWidth;
 			const float uvright = u2 * invWidth;
-			const float uvtop = 1.0f - v1 * invHeight;
-			const float uvbottom = 1.0f - v2 * invHeight;
+			const float uvtop = v1 * invHeight;
+			const float uvbottom = v2 * invHeight;
 			uv[0] = UV(uvleft, uvbottom);
 			uv[1] = UV(uvright, uvbottom);
 			uv[2] = UV(uvright, uvtop);
@@ -1090,8 +1091,9 @@ void TextureCache::ApplyTextureFramebuffer(TexCacheEntry *entry, VirtualFramebuf
 
 		glUseProgram(depal->program);
 
-		glstate.arrayBuffer.unbind();
-		glstate.elementArrayBuffer.unbind();
+		// Restore will rebind all of the state below.
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 		glEnableVertexAttribArray(depal->a_position);
 		glEnableVertexAttribArray(depal->a_texcoord0);
 
@@ -1103,14 +1105,14 @@ void TextureCache::ApplyTextureFramebuffer(TexCacheEntry *entry, VirtualFramebuf
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-		glDisable(GL_BLEND);
-		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glDisable(GL_SCISSOR_TEST);
-		glDisable(GL_CULL_FACE);
-		glDisable(GL_DEPTH_TEST);
-		glDisable(GL_STENCIL_TEST);
+		glstate.blend.force(false);
+		glstate.colorMask.force(true, true, true, true);
+		glstate.scissorTest.force(false);
+		glstate.cullFace.force(false);
+		glstate.depthTest.force(false);
+		glstate.stencilTest.force(false);
 #if !defined(USING_GLES2)
-		glDisable(GL_LOGIC_OP);
+		glstate.colorLogicOp.force(false);
 #endif
 		glViewport(0, 0, framebuffer->renderWidth, framebuffer->renderHeight);
 
@@ -1222,7 +1224,6 @@ void TextureCache::SetTexture(bool force) {
 
 	TexCache::iterator iter = cache.find(cachekey);
 	TexCacheEntry *entry = NULL;
-	gstate_c.flipTexture = false;
 	gstate_c.needShaderTexClamp = false;
 	gstate_c.skipDrawReason &= ~SKIPDRAW_BAD_FB_TEXTURE;
 	bool replaceImages = false;
@@ -1354,10 +1355,10 @@ void TextureCache::SetTexture(bool force) {
 			//got one!
 			entry->lastFrame = gpuStats.numFlips;
 			if (entry->textureName != lastBoundTexture) {
-				nextTexture_ = entry;
 				gstate_c.textureFullAlpha = entry->GetAlphaStatus() == TexCacheEntry::STATUS_ALPHA_FULL;
 				gstate_c.textureSimpleAlpha = entry->GetAlphaStatus() != TexCacheEntry::STATUS_ALPHA_UNKNOWN;
 			}
+			nextTexture_ = entry;
 			VERBOSE_LOG(G3D, "Texture at %08x Found in Cache, applying", texaddr);
 			return; //Done!
 		} else {
@@ -1408,6 +1409,8 @@ void TextureCache::SetTexture(bool force) {
 
 	if ((bufw == 0 || (gstate.texbufwidth[0] & 0xf800) != 0) && texaddr >= PSP_GetKernelMemoryEnd()) {
 		ERROR_LOG_REPORT(G3D, "Texture with unexpected bufw (full=%d)", gstate.texbufwidth[0] & 0xffff);
+		// Proceeding here can cause a crash.
+		return;
 	}
 
 	// We have to decode it, let's setup the cache entry first.
@@ -1495,8 +1498,9 @@ void TextureCache::SetTexture(bool force) {
 
 		// Mobile devices don't get the higher scale factors, too expensive. Very rough way to decide though...
 		if (!gstate_c.Supports(GPU_IS_MOBILE)) {
-			scaleFactor = std::min(gstate_c.Supports(GPU_SUPPORTS_OES_TEXTURE_NPOT) ? 5 : 4, scaleFactor);
-			if (!gl_extensions.OES_texture_npot && scaleFactor == 3) {
+			bool supportNpot = gstate_c.Supports(GPU_SUPPORTS_OES_TEXTURE_NPOT);
+			scaleFactor = std::min(supportNpot ? 5 : 4, scaleFactor);
+			if (!supportNpot && scaleFactor == 3) {
 				scaleFactor = 2;
 			}
 		} else {
